@@ -22,7 +22,15 @@ POST http://localhost:8080/api/validate_chirp
 Content-Type: application/json
 
 {
-  "body": "Very long chirp text here..."
+  "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."
+}
+
+### Chirp has bad words
+POST http://localhost:8080/api/validate_chirp
+Content-Type: application/json
+
+{
+    "body": "This chirp has kerfuffle sharbert and fornax in it"
 }
 
 ### ===================
