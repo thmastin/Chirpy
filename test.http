@@ -39,3 +39,19 @@ Content-Type: application/json
 
 ### Reset metrics
 POST http://localhost:8080/admin/reset
+
+### Reset users
+POST http://localhost:8080/admin/reset
+
+### ===================
+### UPDATING USERS
+### ===================
+
+### Create user
+
+POST http://localhost:8080/api/users
+Content-Type: application/json
+
+{
+    "email": "test@test.com"
+}

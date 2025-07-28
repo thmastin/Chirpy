@@ -1,17 +1,40 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+	"github.com/thmastin/Chirpy/internal/database"
 )
 
 var apiCfg apiConfig
 
 func main() {
+	godotenv.Load()
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		fmt.Printf("error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	dbQueries := database.New(db)
+	platform := os.Getenv("PLATFORM")
+
+	apiCfg = apiConfig{
+		fileserverHits: atomic.Int32{},
+		dbQueries:      dbQueries,
+		platform:       platform,
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(".")))))
@@ -19,6 +42,7 @@ func main() {
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
 	mux.HandleFunc("POST /api/validate_chirp", handlerValidateChirp)
+	mux.HandleFunc("POST /api/users", handlerAddUser)
 
 	var s http.Server
 	s.Handler = mux
@@ -36,6 +60,8 @@ func handlerHealthz(w http.ResponseWriter, r *http.Request) {
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	dbQueries      *database.Queries
+	platform       string
 }
 
 func (apiCfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -54,6 +80,15 @@ func (apiCfg *apiConfig) handlerMetrics(w http.ResponseWriter, r *http.Request) 
 }
 
 func (apiCfg *apiConfig) handlerReset(w http.ResponseWriter, r *http.Request) {
+	if apiCfg.platform != "dev" {
+		respondWithError(w, 403, "forbidden")
+		return
+	}
+	err := apiCfg.dbQueries.Reset(r.Context())
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("unable to reset users table: %v", err))
+		return
+	}
 	w.Header().Add("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(200)
 	apiCfg.fileserverHits.Store(0)
@@ -89,6 +124,34 @@ func handlerValidateChirp(w http.ResponseWriter, r *http.Request) {
 		respondWithJSON(w, 200, payload)
 		return
 	}
+}
+
+func handlerAddUser(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Email string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+
+	newUser, err := apiCfg.dbQueries.CreateUser(r.Context(), params.Email)
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("unable to create user: %v", err))
+		return
+	}
+	user := User{
+		ID:        newUser.ID,
+		CreatedAt: newUser.CreatedAt,
+		UpdatedAt: newUser.UpdatedAt,
+		Email:     newUser.Email,
+	}
+	respondWithJSON(w, 201, user)
 }
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
@@ -135,4 +198,11 @@ func cleanChirpBody(s string) string {
 		}
 	}
 	return strings.Join(words, " ")
+}
+
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
 }
