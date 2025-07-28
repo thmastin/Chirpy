@@ -41,8 +41,8 @@ func main() {
 	mux.HandleFunc("GET /admin/healthz", handlerHealthz)
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
-	mux.HandleFunc("POST /api/validate_chirp", handlerValidateChirp)
 	mux.HandleFunc("POST /api/users", handlerAddUser)
+	mux.HandleFunc("POST /api/chirps", handlerChirps)
 
 	var s http.Server
 	s.Handler = mux
@@ -94,13 +94,15 @@ func (apiCfg *apiConfig) handlerReset(w http.ResponseWriter, r *http.Request) {
 	apiCfg.fileserverHits.Store(0)
 }
 
-func handlerValidateChirp(w http.ResponseWriter, r *http.Request) {
-	type parameters struct {
-		Body string `json:"body"`
+func handlerChirps(w http.ResponseWriter, r *http.Request) {
+	type paramaters struct {
+		Body   string    `json:"body"`
+		UserID uuid.UUID `json:"user_id"`
 	}
 
+	fmt.Printf("request: %v", r)
 	decoder := json.NewDecoder(r.Body)
-	params := parameters{}
+	params := paramaters{}
 	err := decoder.Decode(&params)
 	if err != nil {
 		log.Printf("Error decoding parameters: %s", err)
@@ -109,21 +111,37 @@ func handlerValidateChirp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chirpLength := len(params.Body)
-
-	type validResponse struct {
-		CleanedBody string `json:"cleaned_body"`
-	}
+	fmt.Printf("Params: %v", params)
 
 	if chirpLength > 140 {
 		respondWithError(w, 400, "Chirp is too long")
 		return
-	} else {
-		payload := validResponse{
-			CleanedBody: cleanChirpBody(params.Body),
-		}
-		respondWithJSON(w, 200, payload)
+	}
+
+	cleanedChirp := cleanChirpBody(params.Body)
+	if cleanedChirp != params.Body {
+		respondWithError(w, 422, "body contains bad words")
 		return
 	}
+
+	args := database.CreateChirpParams{
+		Body:   cleanedChirp,
+		UserID: params.UserID,
+	}
+
+	newChirp, err := apiCfg.dbQueries.CreateChirp(r.Context(), args)
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("unable to create chirp: %v", err))
+		return
+	}
+	chirp := Chirp{
+		ID:        newChirp.ID,
+		CreatedAt: newChirp.CreatedAt,
+		UpdatedAt: newChirp.UpdatedAt,
+		Body:      newChirp.Body,
+		UserID:    newChirp.UserID,
+	}
+	respondWithJSON(w, 201, chirp)
 }
 
 func handlerAddUser(w http.ResponseWriter, r *http.Request) {
@@ -205,4 +223,12 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+}
+
+type Chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
 }

@@ -1,0 +1,34 @@
+### Reset the database (ensure your server is running in 'dev' platform)
+POST http://localhost:8080/admin/reset
+Content-Type: application/json
+
+### Create a user to get a valid user_id
+POST http://localhost:8080/api/users
+Content-Type: application/json
+
+{
+    "email": "test@example.com"
+}
+
+### The previous request will give you a user ID in the response. Copy that ID.
+### Now, test creating a chirp with a "bad word"
+POST http://localhost:8080/api/chirps
+Content-Type: application/json
+
+{
+    "body": "This chirp contains a kerfuffle",
+    "user_id": "d5aa9aa8-03e9-4fb2-bac0-fb9ecd01929c"
+}
+
+### Expected Response: Status 422, with an error message.
+
+### Test creating a valid chirp
+POST http://localhost:8080/api/chirps
+Content-Type: application/json
+
+{
+    "body": "This is a perfectly valid chirp!",
+    "user_id": "d5aa9aa8-03e9-4fb2-bac0-fb9ecd01929c"
+}
+
+### Expected Response: Status 201, with the full chirp resource.

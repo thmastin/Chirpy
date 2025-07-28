@@ -10,7 +10,7 @@ GET http://localhost:8080/admin/healthz
 ### ===================
 
 ### Valid chirp
-POST http://localhost:8080/api/validate_chirp
+POST http://localhost:8080/api/chirps
 Content-Type: application/json
 
 {
@@ -18,7 +18,7 @@ Content-Type: application/json
 }
 
 ### Chirp too long
-POST http://localhost:8080/api/validate_chirp
+POST http://localhost:8080/api/chirps
 Content-Type: application/json
 
 {
@@ -26,11 +26,20 @@ Content-Type: application/json
 }
 
 ### Chirp has bad words
-POST http://localhost:8080/api/validate_chirp
+POST http://localhost:8080/api/chirps
 Content-Type: application/json
 
 {
     "body": "This chirp has kerfuffle sharbert and fornax in it"
+}
+
+### Create new chirp
+POST http://localhost:8080/api/chirps
+Content-Type: application/json
+
+{
+  "body": "Hello, world!",
+  "user_id": "123e4567-e89b-12d3-a456-426614174000"
 }
 
 ### ===================
