@@ -43,6 +43,7 @@ func main() {
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
 	mux.HandleFunc("POST /api/users", handlerAddUser)
 	mux.HandleFunc("POST /api/chirps", handlerChirps)
+	mux.HandleFunc("GET /api/chirps", handlerGetChirps)
 
 	var s http.Server
 	s.Handler = mux
@@ -100,7 +101,6 @@ func handlerChirps(w http.ResponseWriter, r *http.Request) {
 		UserID uuid.UUID `json:"user_id"`
 	}
 
-	fmt.Printf("request: %v", r)
 	decoder := json.NewDecoder(r.Body)
 	params := paramaters{}
 	err := decoder.Decode(&params)
@@ -111,7 +111,6 @@ func handlerChirps(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chirpLength := len(params.Body)
-	fmt.Printf("Params: %v", params)
 
 	if chirpLength > 140 {
 		respondWithError(w, 400, "Chirp is too long")
@@ -172,6 +171,20 @@ func handlerAddUser(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, 201, user)
 }
 
+func handlerGetChirps(w http.ResponseWriter, r *http.Request) {
+	dbChirps, err := apiCfg.dbQueries.GetAllChirps(r.Context())
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("unable to retrieve chirps: %v", err))
+		return
+	}
+
+	apiChirps := []Chirp{}
+	for i := range dbChirps {
+		apiChirps = append(apiChirps, convertChirp(dbChirps[i]))
+	}
+	respondWithJSON(w, 200, apiChirps)
+}
+
 func respondWithError(w http.ResponseWriter, code int, msg string) {
 	type errorMsg struct {
 		Error string `json:"error"`
@@ -216,6 +229,16 @@ func cleanChirpBody(s string) string {
 		}
 	}
 	return strings.Join(words, " ")
+}
+
+func convertChirp(c database.Chirp) Chirp {
+	return Chirp{
+		ID:        c.ID,
+		CreatedAt: c.CreatedAt,
+		UpdatedAt: c.UpdatedAt,
+		Body:      c.Body,
+		UserID:    c.UserID,
+	}
 }
 
 type User struct {
