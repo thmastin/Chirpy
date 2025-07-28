@@ -44,6 +44,7 @@ func main() {
 	mux.HandleFunc("POST /api/users", handlerAddUser)
 	mux.HandleFunc("POST /api/chirps", handlerChirps)
 	mux.HandleFunc("GET /api/chirps", handlerGetChirps)
+	mux.HandleFunc("GET /api/chirps/{chirpID}", handlerGetChirp)
 
 	var s http.Server
 	s.Handler = mux
@@ -183,6 +184,22 @@ func handlerGetChirps(w http.ResponseWriter, r *http.Request) {
 		apiChirps = append(apiChirps, convertChirp(dbChirps[i]))
 	}
 	respondWithJSON(w, 200, apiChirps)
+}
+
+func handlerGetChirp(w http.ResponseWriter, r *http.Request) {
+	chirpID := r.PathValue("chirpID")
+	chirpUUID, err := uuid.Parse(chirpID)
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("unable to parse request: %v", err))
+		return
+	}
+	chirp, err := apiCfg.dbQueries.GetChirp(r.Context(), chirpUUID)
+	if err != nil {
+		respondWithError(w, 404, fmt.Sprintf("chirp not found: %v", err))
+		return
+	}
+	apiChirp := convertChirp(chirp)
+	respondWithJSON(w, 200, apiChirp)
 }
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {

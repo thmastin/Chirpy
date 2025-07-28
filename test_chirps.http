@@ -36,3 +36,9 @@ Content-Type: application/json
 ### Get all chirps
 GET http://localhost:8080/api/chirps
 ### Expected Response: Status 200, with an array of all chirps, ordered by created_at.
+
+### Get one chirp
+GET http://localhost:8080/api/chirps/25385ec1-3d9e-4619-a371-6c16180bf5a0
+
+### Test error when wrong chrip id provided
+GET http://localhost:8080/api/chirps/00000000-0000-0000-0000-000000000000
