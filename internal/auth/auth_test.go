@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -102,4 +104,49 @@ func TestWrongSecret(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for wrong secret, but got none")
 	}
+}
+
+func TestEmptyBearerToken(t *testing.T) {
+	headers := make(http.Header)
+
+	token, err := GetBearerToken(headers)
+	if token != "" {
+		t.Errorf("Expected empty token, got %s", token)
+	}
+	if err == nil {
+		t.Error("Expected an error, got nil")
+	}
+	expectedError := errors.New("authorization header missing")
+	if err.Error() != expectedError.Error() {
+		t.Errorf("Expected error: %v, got: %v", expectedError, err)
+	}
+}
+
+func TestGetBearerToken_WithToken(t *testing.T) {
+	headers := make(http.Header)
+	headers.Set("Authorization", "Bearer testtoken")
+	expectedToken := "testtoken"
+
+	actualToken, err := GetBearerToken(headers)
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+	if expectedToken != actualToken {
+		t.Errorf("Exprected token: \"%s\", but got \"%s\"", expectedToken, actualToken)
+	}
+}
+
+func TestGetBearerToken_InvalidHeaderFormat(t *testing.T) {
+	headers := make(http.Header)
+	headers.Set("Authorization", "testtoken")
+
+	_, err := GetBearerToken(headers)
+	if err == nil {
+		t.Error("Exprected error, got nil")
+	}
+	expectedError := errors.New("invalid authorization header format")
+	if err.Error() != expectedError.Error() {
+		t.Errorf("Expected error: %v, got: %v", expectedError, err)
+	}
+
 }

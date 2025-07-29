@@ -30,11 +30,13 @@ func main() {
 	}
 	dbQueries := database.New(db)
 	platform := os.Getenv("PLATFORM")
+	tokenSecret := os.Getenv("SECRET")
 
 	apiCfg = apiConfig{
 		fileserverHits: atomic.Int32{},
 		dbQueries:      dbQueries,
 		platform:       platform,
+		tokenSecret:    tokenSecret,
 	}
 
 	mux := http.NewServeMux()
@@ -66,6 +68,7 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	dbQueries      *database.Queries
 	platform       string
+	tokenSecret    string
 }
 
 func (apiCfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -187,8 +190,9 @@ func handlerAddUser(w http.ResponseWriter, r *http.Request) {
 
 func handlerLogin(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
-		Password string `json:"password"`
-		Email    string `json:"email"`
+		Password         string `json:"password"`
+		Email            string `json:"email"`
+		ExpiresInSeconds *int   `json:"expires_in_seconds,omitempty"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -212,11 +216,24 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var expiresIn time.Duration
+	if params.ExpiresInSeconds == nil {
+		expiresIn = time.Hour
+	} else {
+		expiresIn = time.Duration(*params.ExpiresInSeconds) * time.Second
+	}
+
+	token, err := auth.MakeJWT(apiUser.ID, apiCfg.tokenSecret, expiresIn)
+	if err != nil {
+		log.Printf("Error creating token: %v", err)
+	}
+
 	user := User{
 		ID:        apiUser.ID,
 		CreatedAt: apiUser.CreatedAt,
 		UpdatedAt: apiUser.UpdatedAt,
 		Email:     apiUser.Email,
+		Token:     token,
 	}
 
 	respondWithJSON(w, 200, user)
@@ -313,6 +330,7 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+	Token     string    `json:"token"`
 }
 
 type Chirp struct {
