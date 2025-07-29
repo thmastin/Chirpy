@@ -103,13 +103,24 @@ func (apiCfg *apiConfig) handlerReset(w http.ResponseWriter, r *http.Request) {
 
 func handlerChirps(w http.ResponseWriter, r *http.Request) {
 	type paramaters struct {
-		Body   string    `json:"body"`
-		UserID uuid.UUID `json:"user_id"`
+		Body string `json:"body"`
+	}
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, apiCfg.tokenSecret)
+	if err != nil {
+		respondWithError(w, 401, "Unauthorized")
+		return
 	}
 
 	decoder := json.NewDecoder(r.Body)
 	params := paramaters{}
-	err := decoder.Decode(&params)
+	err = decoder.Decode(&params)
 	if err != nil {
 		log.Printf("Error decoding parameters: %s", err)
 		w.WriteHeader(500)
@@ -131,7 +142,7 @@ func handlerChirps(w http.ResponseWriter, r *http.Request) {
 
 	args := database.CreateChirpParams{
 		Body:   cleanedChirp,
-		UserID: params.UserID,
+		UserID: userID,
 	}
 
 	newChirp, err := apiCfg.dbQueries.CreateChirp(r.Context(), args)
