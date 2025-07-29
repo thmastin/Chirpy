@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/thmastin/Chirpy/internal/auth"
 	"github.com/thmastin/Chirpy/internal/database"
 )
 
@@ -45,6 +46,7 @@ func main() {
 	mux.HandleFunc("POST /api/chirps", handlerChirps)
 	mux.HandleFunc("GET /api/chirps", handlerGetChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", handlerGetChirp)
+	mux.HandleFunc("POST /api/login", handlerLogin)
 
 	var s http.Server
 	s.Handler = mux
@@ -146,7 +148,8 @@ func handlerChirps(w http.ResponseWriter, r *http.Request) {
 
 func handlerAddUser(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
-		Email string `json:"email"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -158,7 +161,17 @@ func handlerAddUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newUser, err := apiCfg.dbQueries.CreateUser(r.Context(), params.Email)
+	hashedPassword, err := auth.HashPassword(params.Password)
+	if err != nil {
+		log.Printf("Error hashing password: %v", err)
+	}
+
+	args := database.CreateUserParams{
+		Email:          params.Email,
+		HashedPassword: hashedPassword,
+	}
+
+	newUser, err := apiCfg.dbQueries.CreateUser(r.Context(), args)
 	if err != nil {
 		respondWithError(w, 500, fmt.Sprintf("unable to create user: %v", err))
 		return
@@ -172,6 +185,43 @@ func handlerAddUser(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, 201, user)
 }
 
+func handlerLogin(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+
+	apiUser, err := apiCfg.dbQueries.GetUserByEmail(r.Context(), params.Email)
+	if err != nil {
+		respondWithError(w, 401, "Incorrect email or password")
+		return
+	}
+
+	err = auth.CheckPasswordHash(params.Password, apiUser.HashedPassword)
+	if err != nil {
+		respondWithError(w, 401, "Incorrect email or password")
+		return
+	}
+
+	user := User{
+		ID:        apiUser.ID,
+		CreatedAt: apiUser.CreatedAt,
+		UpdatedAt: apiUser.UpdatedAt,
+		Email:     apiUser.Email,
+	}
+
+	respondWithJSON(w, 200, user)
+
+}
 func handlerGetChirps(w http.ResponseWriter, r *http.Request) {
 	dbChirps, err := apiCfg.dbQueries.GetAllChirps(r.Context())
 	if err != nil {
