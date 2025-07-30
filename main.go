@@ -49,6 +49,8 @@ func main() {
 	mux.HandleFunc("GET /api/chirps", handlerGetChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", handlerGetChirp)
 	mux.HandleFunc("POST /api/login", handlerLogin)
+	mux.HandleFunc("POST /api/refresh", handlerRefresh)
+	mux.HandleFunc("POST /api/revoke", handlerRevoke)
 
 	var s http.Server
 	s.Handler = mux
@@ -201,9 +203,8 @@ func handlerAddUser(w http.ResponseWriter, r *http.Request) {
 
 func handlerLogin(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
-		Password         string `json:"password"`
-		Email            string `json:"email"`
-		ExpiresInSeconds *int   `json:"expires_in_seconds,omitempty"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -227,24 +228,40 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var expiresIn time.Duration
-	if params.ExpiresInSeconds == nil {
-		expiresIn = time.Hour
-	} else {
-		expiresIn = time.Duration(*params.ExpiresInSeconds) * time.Second
-	}
-
-	token, err := auth.MakeJWT(apiUser.ID, apiCfg.tokenSecret, expiresIn)
+	token, err := auth.MakeJWT(apiUser.ID, apiCfg.tokenSecret, time.Hour)
 	if err != nil {
 		log.Printf("Error creating token: %v", err)
 	}
 
+	refreshToken, err := auth.MakeRefreshToken()
+	if err != nil {
+		log.Printf("failed to create refresh token: %v", err)
+		respondWithError(w, 500, "failed to create refresh token")
+		return
+	}
+
+	currentTime := time.Now()
+	expiryTime := currentTime.AddDate(0, 0, 60)
+
+	refreshTokenParams := database.CreateRefreshTokenParams{
+		Token:     refreshToken,
+		UserID:    apiUser.ID,
+		ExpiresAt: expiryTime,
+	}
+
+	newRefreshToken, err := apiCfg.dbQueries.CreateRefreshToken(r.Context(), refreshTokenParams)
+	if err != nil {
+		log.Printf("failed to create refresh token: %v", err)
+		respondWithError(w, 500, "failed to create refresh token")
+	}
+
 	user := User{
-		ID:        apiUser.ID,
-		CreatedAt: apiUser.CreatedAt,
-		UpdatedAt: apiUser.UpdatedAt,
-		Email:     apiUser.Email,
-		Token:     token,
+		ID:           apiUser.ID,
+		CreatedAt:    apiUser.CreatedAt,
+		UpdatedAt:    apiUser.UpdatedAt,
+		Email:        apiUser.Email,
+		Token:        token,
+		RefreshToken: newRefreshToken.Token,
 	}
 
 	respondWithJSON(w, 200, user)
@@ -278,6 +295,42 @@ func handlerGetChirp(w http.ResponseWriter, r *http.Request) {
 	}
 	apiChirp := convertChirp(chirp)
 	respondWithJSON(w, 200, apiChirp)
+}
+
+func handlerRefresh(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+	user, err := apiCfg.dbQueries.GetUserFromRefreshToken(r.Context(), token)
+	if err != nil {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+	newToken, err := auth.MakeJWT(user.ID, apiCfg.tokenSecret, time.Hour)
+	if err != nil {
+		log.Printf("Failed to generate JWT: %v", err)
+		respondWithError(w, 500, "Failed to generate new token")
+		return
+	}
+	respondWithJSON(w, 200, map[string]string{
+		"token": newToken,
+	})
+
+}
+
+func handlerRevoke(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+	err = apiCfg.dbQueries.RevokeRefreshToken(r.Context(), token)
+	if err != nil {
+		log.Printf("Unable to revoke refresh token: %v", err)
+	}
+	respondWithJSON(w, 204, nil)
 }
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
@@ -336,12 +389,22 @@ func convertChirp(c database.Chirp) Chirp {
 	}
 }
 
-type User struct {
-	ID        uuid.UUID `json:"id"`
+type RefreshToken struct {
+	Token     string    `json:"token"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-	Token     string    `json:"token"`
+	UserID    uuid.UUID `json:"user_id"`
+	ExpiresAt time.Time `json:"expires_at"`
+	RevokeAt  time.Time `json:"RevokeAt"`
+}
+
+type User struct {
+	ID           uuid.UUID `json:"id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Email        string    `json:"email"`
+	Token        string    `json:"token"`
+	RefreshToken string    `json:"refresh_token"`
 }
 
 type Chirp struct {
