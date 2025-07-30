@@ -51,6 +51,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", handlerLogin)
 	mux.HandleFunc("POST /api/refresh", handlerRefresh)
 	mux.HandleFunc("POST /api/revoke", handlerRevoke)
+	mux.HandleFunc("PUT /api/users", handlerUpdateUserLogin)
 
 	var s http.Server
 	s.Handler = mux
@@ -331,6 +332,62 @@ func handlerRevoke(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Unable to revoke refresh token: %v", err)
 	}
 	respondWithJSON(w, 204, nil)
+}
+
+func handlerUpdateUserLogin(w http.ResponseWriter, r *http.Request) {
+	type paramaters struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, apiCfg.tokenSecret)
+	if err != nil {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := paramaters{}
+	err = decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+
+	newHashedPassword, err := auth.HashPassword(params.Password)
+	if err != nil {
+		log.Printf("Failed to hash password: %v", err)
+		respondWithError(w, 500, "Server Error")
+		return
+	}
+
+	args := database.UpdateUserLoginParams{
+		Email:          params.Email,
+		HashedPassword: newHashedPassword,
+		ID:             userID,
+	}
+
+	updatedUser, err := apiCfg.dbQueries.UpdateUserLogin(r.Context(), args)
+	if err != nil {
+		log.Printf("Error updating user: %v", err)
+		respondWithError(w, 500, "Server Error")
+	}
+
+	user := User{
+		ID:        updatedUser.ID,
+		CreatedAt: updatedUser.CreatedAt,
+		UpdatedAt: updatedUser.UpdatedAt,
+		Email:     updatedUser.Email,
+	}
+	respondWithJSON(w, 200, user)
+
 }
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
