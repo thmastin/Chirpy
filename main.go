@@ -52,6 +52,7 @@ func main() {
 	mux.HandleFunc("POST /api/refresh", handlerRefresh)
 	mux.HandleFunc("POST /api/revoke", handlerRevoke)
 	mux.HandleFunc("PUT /api/users", handlerUpdateUserLogin)
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", handlerDeleteChirp)
 
 	var s http.Server
 	s.Handler = mux
@@ -387,6 +388,45 @@ func handlerUpdateUserLogin(w http.ResponseWriter, r *http.Request) {
 		Email:     updatedUser.Email,
 	}
 	respondWithJSON(w, 200, user)
+}
+
+func handlerDeleteChirp(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, apiCfg.tokenSecret)
+	if err != nil {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+
+	chirpID := r.PathValue("chirpID")
+	chirpUUID, err := uuid.Parse(chirpID)
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("unable to parse request: %v", err))
+		return
+	}
+	chirp, err := apiCfg.dbQueries.GetChirp(r.Context(), chirpUUID)
+	if err != nil {
+		respondWithError(w, 404, fmt.Sprintf("chirp not found: %v", err))
+		return
+	}
+
+	if userID != chirp.UserID {
+		respondWithError(w, 403, "Forbidden")
+		return
+	}
+
+	err = apiCfg.dbQueries.DeleteChirp(r.Context(), chirp.ID)
+	if err != nil {
+		log.Printf("Unalbe to delete chirp: %v", err)
+		respondWithError(w, 500, "Server Error")
+		return
+	}
+	respondWithJSON(w, 204, "")
 
 }
 

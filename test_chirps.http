@@ -17,7 +17,7 @@ Content-Type: application/json
 
 {
     "body": "This chirp contains a kerfuffle",
-    "user_id": "d5aa9aa8-03e9-4fb2-bac0-fb9ecd01929c"
+    "user_id": "abb4380e-281c-4e60-a076-11d387a4525c"
 }
 
 ### Expected Response: Status 422, with an error message.
