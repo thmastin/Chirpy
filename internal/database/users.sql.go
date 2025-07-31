@@ -22,7 +22,7 @@ VALUES (
     $1,
     $2
 )
-RETURNING id, created_at, updated_at, email, hashed_password
+RETURNING id, created_at, updated_at, email, hashed_password, is_chirpy_red
 `
 
 type CreateUserParams struct {
@@ -39,12 +39,13 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, created_at, updated_at, email, hashed_password FROM users
+SELECT id, created_at, updated_at, email, hashed_password, is_chirpy_red FROM users
 WHERE email = $1
 `
 
@@ -57,12 +58,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
 
 const getUserFromRefreshToken = `-- name: GetUserFromRefreshToken :one
-SELECT id, users.created_at, users.updated_at, email, hashed_password, token, refresh_tokens.created_at, refresh_tokens.updated_at, user_id, expires_at, revoked_at FROM users 
+SELECT id, users.created_at, users.updated_at, email, hashed_password, is_chirpy_red, token, refresh_tokens.created_at, refresh_tokens.updated_at, user_id, expires_at, revoked_at FROM users 
 JOIN refresh_tokens ON users.id = refresh_tokens.user_id
 WHERE refresh_tokens.token = $1
 AND refresh_tokens.expires_at > NOW()
@@ -75,6 +77,7 @@ type GetUserFromRefreshTokenRow struct {
 	UpdatedAt      time.Time
 	Email          string
 	HashedPassword string
+	IsChirpyRed    bool
 	Token          string
 	CreatedAt_2    time.Time
 	UpdatedAt_2    time.Time
@@ -92,6 +95,7 @@ func (q *Queries) GetUserFromRefreshToken(ctx context.Context, token string) (Ge
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 		&i.Token,
 		&i.CreatedAt_2,
 		&i.UpdatedAt_2,
@@ -111,11 +115,23 @@ func (q *Queries) Reset(ctx context.Context) error {
 	return err
 }
 
+const setUserToRed = `-- name: SetUserToRed :exec
+UPDATE users
+SET is_chirpy_red = TRUE
+WHERE id = $1
+RETURNING id, created_at, updated_at, email, hashed_password, is_chirpy_red
+`
+
+func (q *Queries) SetUserToRed(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, setUserToRed, id)
+	return err
+}
+
 const updateUserLogin = `-- name: UpdateUserLogin :one
 UPDATE users
 SET updated_at = NOW(), email = $1, hashed_password = $2
 WHERE id = $3
-RETURNING id, created_at, updated_at, email, hashed_password
+RETURNING id, created_at, updated_at, email, hashed_password, is_chirpy_red
 `
 
 type UpdateUserLoginParams struct {
@@ -133,6 +149,7 @@ func (q *Queries) UpdateUserLogin(ctx context.Context, arg UpdateUserLoginParams
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }

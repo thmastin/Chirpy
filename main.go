@@ -53,6 +53,7 @@ func main() {
 	mux.HandleFunc("POST /api/revoke", handlerRevoke)
 	mux.HandleFunc("PUT /api/users", handlerUpdateUserLogin)
 	mux.HandleFunc("DELETE /api/chirps/{chirpID}", handlerDeleteChirp)
+	mux.HandleFunc("POST /api/polka/webhooks", handlerSetRed)
 
 	var s http.Server
 	s.Handler = mux
@@ -195,10 +196,11 @@ func handlerAddUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := User{
-		ID:        newUser.ID,
-		CreatedAt: newUser.CreatedAt,
-		UpdatedAt: newUser.UpdatedAt,
-		Email:     newUser.Email,
+		ID:          newUser.ID,
+		CreatedAt:   newUser.CreatedAt,
+		UpdatedAt:   newUser.UpdatedAt,
+		Email:       newUser.Email,
+		IsChirpyRed: newUser.IsChirpyRed,
 	}
 	respondWithJSON(w, 201, user)
 }
@@ -264,6 +266,7 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 		Email:        apiUser.Email,
 		Token:        token,
 		RefreshToken: newRefreshToken.Token,
+		IsChirpyRed:  apiUser.IsChirpyRed,
 	}
 
 	respondWithJSON(w, 200, user)
@@ -382,10 +385,11 @@ func handlerUpdateUserLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := User{
-		ID:        updatedUser.ID,
-		CreatedAt: updatedUser.CreatedAt,
-		UpdatedAt: updatedUser.UpdatedAt,
-		Email:     updatedUser.Email,
+		ID:          updatedUser.ID,
+		CreatedAt:   updatedUser.CreatedAt,
+		UpdatedAt:   updatedUser.UpdatedAt,
+		Email:       updatedUser.Email,
+		IsChirpyRed: updatedUser.IsChirpyRed,
 	}
 	respondWithJSON(w, 200, user)
 }
@@ -426,8 +430,38 @@ func handlerDeleteChirp(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "Server Error")
 		return
 	}
-	respondWithJSON(w, 204, "")
+	respondWithJSON(w, 204, nil)
 
+}
+
+func handlerSetRed(w http.ResponseWriter, r *http.Request) {
+	type UserUpgradedEvent struct {
+		Event string `json:"event"`
+		Data  struct {
+			UserID uuid.UUID `json:"user_id"`
+		}
+	}
+
+	var event UserUpgradedEvent
+
+	err := json.NewDecoder(r.Body).Decode(&event)
+	if err != nil {
+		log.Printf("Error decoding request: %v", err)
+		respondWithError(w, 500, "Server Error")
+		return
+	}
+
+	if event.Event != "user.upgraded" {
+		respondWithJSON(w, 204, nil)
+		return
+	}
+
+	err = apiCfg.dbQueries.SetUserToRed(r.Context(), event.Data.UserID)
+	if err != nil {
+		respondWithError(w, 404, "User not found")
+		return
+	}
+	respondWithJSON(w, 204, nil)
 }
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
@@ -502,6 +536,7 @@ type User struct {
 	Email        string    `json:"email"`
 	Token        string    `json:"token"`
 	RefreshToken string    `json:"refresh_token"`
+	IsChirpyRed  bool      `json:"is_chirpy_red"`
 }
 
 type Chirp struct {
