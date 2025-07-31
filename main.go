@@ -31,12 +31,14 @@ func main() {
 	dbQueries := database.New(db)
 	platform := os.Getenv("PLATFORM")
 	tokenSecret := os.Getenv("SECRET")
+	polkaKey := os.Getenv("POLKA_KEY")
 
 	apiCfg = apiConfig{
 		fileserverHits: atomic.Int32{},
 		dbQueries:      dbQueries,
 		platform:       platform,
 		tokenSecret:    tokenSecret,
+		polkaKey:       polkaKey,
 	}
 
 	mux := http.NewServeMux()
@@ -74,6 +76,7 @@ type apiConfig struct {
 	dbQueries      *database.Queries
 	platform       string
 	tokenSecret    string
+	polkaKey       string
 }
 
 func (apiCfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -273,6 +276,8 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 
 }
 func handlerGetChirps(w http.ResponseWriter, r *http.Request) {
+	s := r.URL.Query().Get("author_id")
+
 	dbChirps, err := apiCfg.dbQueries.GetAllChirps(r.Context())
 	if err != nil {
 		respondWithError(w, 500, fmt.Sprintf("unable to retrieve chirps: %v", err))
@@ -435,6 +440,15 @@ func handlerDeleteChirp(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlerSetRed(w http.ResponseWriter, r *http.Request) {
+	apiKey, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+	if apiKey != apiCfg.polkaKey {
+		respondWithError(w, 401, "Unauthorize")
+	}
+
 	type UserUpgradedEvent struct {
 		Event string `json:"event"`
 		Data  struct {
@@ -444,7 +458,7 @@ func handlerSetRed(w http.ResponseWriter, r *http.Request) {
 
 	var event UserUpgradedEvent
 
-	err := json.NewDecoder(r.Body).Decode(&event)
+	err = json.NewDecoder(r.Body).Decode(&event)
 	if err != nil {
 		log.Printf("Error decoding request: %v", err)
 		respondWithError(w, 500, "Server Error")
