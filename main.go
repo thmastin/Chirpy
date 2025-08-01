@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -276,6 +277,9 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 
 }
 func handlerGetChirps(w http.ResponseWriter, r *http.Request) {
+	apiChirps := []Chirp{}
+	dbChirps := []database.Chirp{}
+	var err error
 	s := r.URL.Query().Get("author_id")
 	if s != "" {
 		userID, err := uuid.Parse(s)
@@ -284,24 +288,44 @@ func handlerGetChirps(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, 500, "Server Error")
 			return
 		}
-		chirps, err := apiCfg.dbQueries.GetChirpsByUser(r.Context(), userID)
+		dbChirps, err = apiCfg.dbQueries.GetChirpsByUser(r.Context(), userID)
 		if err != nil {
 			respondWithError(w, 500, fmt.Sprintf("Unable to get chirps: %v", err))
+		}
+	} else {
+		dbChirps, err = apiCfg.dbQueries.GetAllChirps(r.Context())
+		if err != nil {
+			respondWithError(w, 500, fmt.Sprintf("unable to retrieve chirps: %v", err))
 			return
 		}
-		respondWithJSON(w, 200, chirps)
-		return
-	}
-	dbChirps, err := apiCfg.dbQueries.GetAllChirps(r.Context())
-	if err != nil {
-		respondWithError(w, 500, fmt.Sprintf("unable to retrieve chirps: %v", err))
-		return
+
 	}
 
-	apiChirps := []Chirp{}
+	sortParam := r.URL.Query().Get("sort")
+	switch sortParam {
+	case "asc":
+		sort.Slice(dbChirps, func(i, j int) bool {
+			return dbChirps[i].CreatedAt.Before(dbChirps[j].CreatedAt)
+		})
+	case "desc":
+		sort.Slice(dbChirps, func(i, j int) bool {
+			return dbChirps[i].CreatedAt.After(dbChirps[j].CreatedAt)
+		})
+	case "default":
+		sort.Slice(dbChirps, func(i, j int) bool {
+			return dbChirps[i].CreatedAt.Before(dbChirps[j].CreatedAt)
+		})
+	}
+	if sortParam == "desc" {
+		sort.Slice(dbChirps, func(i, j int) bool {
+			// Assuming CreatedAt is a field in your database.Chirp struct that can be compared directly (e.g., time.Time or a sortable string format)
+			return dbChirps[i].CreatedAt.After(dbChirps[j].CreatedAt)
+		})
+	}
 	for i := range dbChirps {
 		apiChirps = append(apiChirps, convertChirp(dbChirps[i]))
 	}
+
 	respondWithJSON(w, 200, apiChirps)
 }
 
