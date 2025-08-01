@@ -277,7 +277,21 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 }
 func handlerGetChirps(w http.ResponseWriter, r *http.Request) {
 	s := r.URL.Query().Get("author_id")
-
+	if s != "" {
+		userID, err := uuid.Parse(s)
+		if err != nil {
+			log.Printf("Unable to pars author_id: %v", err)
+			respondWithError(w, 500, "Server Error")
+			return
+		}
+		chirps, err := apiCfg.dbQueries.GetChirpsByUser(r.Context(), userID)
+		if err != nil {
+			respondWithError(w, 500, fmt.Sprintf("Unable to get chirps: %v", err))
+			return
+		}
+		respondWithJSON(w, 200, chirps)
+		return
+	}
 	dbChirps, err := apiCfg.dbQueries.GetAllChirps(r.Context())
 	if err != nil {
 		respondWithError(w, 500, fmt.Sprintf("unable to retrieve chirps: %v", err))
